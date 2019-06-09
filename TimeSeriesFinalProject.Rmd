@@ -1,0 +1,250 @@
+---
+title: "Time Series Analysis for Two Separate Periods of Microsoft Closing Stock Price Data"
+output:
+  html_document: default
+  word_document: default  
+---
+
+```{r setup, include=FALSE, message=FALSE}
+library(TSA, quietly = T)
+library(aTSA, quietly = T)
+library(knitr, quietly = T)
+library(forecast, quietly = T)
+```
+
+# **1. Getting and Analyzing the Data**
+
+I enjoy working in finance, and I have been using different technologies to provide engineering and software solutions to the financial sector for over a decade. I have been invested in Microsoft for quite some time, and am familiar with not only the company and its history, but also its stock performance as well. 
+
+I picked two datasets that represent quite different aspects of both where Microosft was as a compnay, but how the financial markets were as well. In 2012-2013 Micorosft (MSFT) was losing massive ground to Apple, its path forward was very unclear at best, and the Great Recession was still a cloud which loomed large over the minds of traders. In 2017-2018, MSFT could do no wrong, it because the largest company in the world, and the markets were booming.
+
+The initial question I want to ask, and explain with this analysis is: Given the disparity in times, circumstances, and more, can the same time series model be used to evaluate both datasets?
+
+```{r ExamineData, message=FALSE}
+stockPrices2017 <- read.csv("C:/Users/jeffr/OneDrive/Documents/School/Time Series/R/Msft2017to2018.csv")
+stockPrices2012 <- read.csv("C:/Users/jeffr/OneDrive/Documents/School/Time Series/R/Msft2012to2013.csv")
+
+stockPrices2019 <- read.csv("C:/Users/jeffr/OneDrive/Documents/School/Time Series/R/Msft2019.csv")
+stockPrices2014 <- read.csv("C:/Users/jeffr/OneDrive/Documents/School/Time Series/R/Msft2014.csv")
+
+msft2012 <- stockPrices2012$close
+msft2014 <- stockPrices2014$close
+msft2017 <- stockPrices2017$close
+msft2019 <- stockPrices2019$close
+
+plot(msft2012, main = "Microsoft Stock Price in 2012 - 2013", type="l", col = "blue", lwd = 2, ylab = "Price in $", xlab = "Trading Days since 2012")
+
+plot(msft2017, main = "Microsoft Stock Price in 2017 - 2018", type="l", col = "blue", lwd = 2, ylab = "Price in $", xlab = "Trading Days since 2017")
+```
+
+## **Decomposition**
+
+We can clearly see from here there is a trend compnonent, but no seasonality to both of the time series. Given what is known about stock data and Microsoft during these time periods in particular, this is expected.
+
+```{r DecomposeData, echo=FALSE, message=FALSE}
+msft2012TimeSeries <- ts(msft2012, frequency=250)
+msft2017TimeSeries <- ts(msft2017, frequency=250)
+
+decomp2012 = stl(msft2012TimeSeries,s.window="periodic")
+plot(decomp2012)
+
+decomp2017 = stl(msft2017TimeSeries,s.window="periodic")
+plot(decomp2017)
+```
+
+## **ACF/PACF**
+
+Initial looks at the ACF and PACF plots for both of the time series, as expected, is showing high autocorrelation. This is a sign as well that the data needs to be made stationary. 
+
+```{r AcfPacf Init, echo=FALSE, message=FALSE}
+msft2012TimeSeries <- ts(msft2012, frequency=251)
+msft2017TimeSeries <- ts(msft2017, frequency=251)
+
+acf(msft2012TimeSeries)
+pacf(msft2012TimeSeries)
+
+acf(msft2017TimeSeries)
+pacf(msft2017TimeSeries)
+```
+
+# **2. Making it Stationary**
+
+This part is a bit unexpected for me. Looking at the plot of the differenced data, it looks like the data has been made stationary. Looking at the ACF and PACF plot revealed the surprised. It seems to fit neither an AR or MA model. I guess I had just assumed that it would be an AR model. Also, maybe it fights my natural instinct that this data is a random walk.
+
+It seems for sure this segment of the MSFT close data does not look like what we saw previously. For sure, there is a not a constant variance, and in fact, it does seem to be a bit of volitility clustering. However, let's do a little more digging before I jump to any conclusions.
+
+The ACF and PACF of the differenced data do show this may benefit from an AR(2) and an MA(2) model
+```{r AcfPacf Round 2, echo=FALSE, message=FALSE}
+plot(diff(msft2012TimeSeries), main = "2012 - 2013 Microsoft Stock Closing Price Diff Lag 1")
+acf(diff(msft2012TimeSeries))
+pacf(diff(msft2012TimeSeries))
+
+
+plot(diff(msft2017TimeSeries), main = "2017 - 2018 Microsoft Stock Closing Price Diff Lag 1")
+acf(diff(msft2017TimeSeries))
+pacf(diff(msft2017TimeSeries))
+```
+
+With only differencing by lag of 1, we were able to make both time series stationary. I was perhaps thinking of going a bit further with the 2017-2018 MSFT data because of what I was seeing in the volatilty, however, less is definitely more with transformations, so I want to keep it to a minimum.
+
+```{r Stationarity, echo=FALSE, message=FALSE}
+aTSA::adf.test(diff(msft2012TimeSeries),output=TRUE)
+aTSA::adf.test(diff(msft2017TimeSeries),output=TRUE)
+```
+
+Doing a quick analysis of the models suggested by the ACF an PACF anysis of both datasets. The models to appear to be descent fits for their respective models. I do want to point out however, the random walk does appear to be a better fit. The ARIMA(2,1,2) model for the 2017-2018 dataset does not fit the data as well.
+
+# **3. Modeling and Evaluating**
+
+Dickey-Fuller tests on both datasets to ensure the data is stationary.
+```{r FittingModels, echo=FALSE, message=FALSE}
+model2012 <- arima(msft2012TimeSeries, c(0, 1, 0))
+model2012
+
+model2017 <- arima(msft2012TimeSeries, c(2, 1, 2))
+model2017
+```
+
+Looking at the auto arima functions, we can see that it pretty much agreed with the analysis that I did manually using the ACF and PACF. So 2012 - 2013 data seems to be indeed a random walk, and the 2017-2018 data appears to be an ARIMA(3,1,3) with drift rather than an ARIMA (2,1,2).
+```{r Evalution, echo=FALSE, message=FALSE}
+model2012 <- auto.arima(msft2012TimeSeries)
+summary(model2012)
+
+model2017 <- auto.arima(msft2017TimeSeries)
+summary(model2017)
+```
+
+All the estimates using AIC seem to be fairly close, and given that I would like to select the simplest model Indeed, a Random Walk appears to be the winner here.
+
+Similar to the resuts above, however, while the anylsis suggests that an ARIMA(3,1,3), its seems to be very close to an ARIMA(1,1,1). If so, an ARIMA(1,1,1) would be prefferable. However, I'm now thinking maybe also try a Random Walk here.
+```{r Evalution AIC Table, echo=FALSE, message=FALSE}
+
+aic_table <- function(data,P,Q){
+  table <- matrix(NA,(P+1),(Q+1))
+  for(p in 0:P) {
+    for(q in 0:Q) {
+       table[p+1,q+1] <- arima(data,order=c(p,1,q))$aic
+    }
+  }
+  dimnames(table) <- list(paste("<b> AR",0:P, "</b>", sep=""),paste("MA",0:Q,sep=""))
+  table
+}
+```
+
+
+AIC of 2012 - 203 MSFT using different ARIMA parameters
+```{r Aic1, echo=FALSE, message=FALSE}
+table <- aic_table(msft2012TimeSeries,3,3)
+require(knitr)
+kable(table, digits = 2)
+```
+
+AIC of 2017 - 2018 MSFT using different ARIMA parameters
+```{r Aic2}
+table <- aic_table(msft2017TimeSeries,3,3)
+require(knitr)
+kable(table, digits = 2)
+```
+
+
+
+# **4. Forecasting**
+
+```{r Forecasting, echo=FALSE, message=FALSE}
+msft2014TimeSeries <- ts(msft2014, frequency=251, start=c(3,1)) 
+msft2019TimeSeries <- ts(msft2019, frequency=251, start=c(3,1))
+
+rme_table <- function(trainingTimeSeries, testTimeSeries, P, Q){
+  table <- matrix(NA,(P+1),(Q+1))
+  for(p in 0:P) {
+    for(q in 0:Q) {
+      trainingModel <- arima(trainingTimeSeries, order = c(p,1,q))
+      predictedValues <- predict(trainingModel, n.ahead = 5)$pred
+      trainingModel$x <- trainingTimeSeries
+      forecast <- forecast::forecast(trainingModel, h = 5)
+      rme <- accuracy(predictedValues,testTimeSeries)[2]
+      print(rme)
+      table[p+1,q+1] <- rme
+    }
+  }
+  dimnames(table) <- list(paste("<b> AR",0:P, "</b>", sep=""),paste("MA",0:Q,sep=""))
+  table
+}
+```
+
+Above, I put together a table that displayed the AIC for each of the models for each dataset. This was one way to show possible which model would be a good fit for the data. However, here I created a table to see how accurate the different ARIMA models forecast the data. We can compare this table to the AIC table.
+
+So interesting. While analysis showed that a random walk was a best fir for the data, do remember that the table I created showed that the random walk and multiple ARIMA models were all fairly close in AIC. Actually forecasting the 2014 data, and ARIM(2,1,2) model is cleary the winner.
+
+Forecast Accuracy of different ARIMA parameters on MSFT 2012 - 2013 data 
+```{r 2012 Forecast Table, echo=FALSE, message=FALSE}
+table <- rme_table(msft2012TimeSeries, msft2014TimeSeries, 3, 3)
+require(knitr)
+kable(table, digits = 2)
+```
+
+Interestingly enough the ARIMA(1,1,1) model forecasts the data the best. In the ACP/PACF analysis above, the ARIMA(2,1,2) was the best fit, but I had mentioned since the numbers were close, my preference for ARIMA(1,1,1) to keep the model a bit simpler. Notice the random walk is not too far off.
+
+Forecast Accuracy of different ARIMA parameters on MSFT 2017 - 2018 data 
+```{r 2017 Forecast Table, echo=FALSE, message=FALSE}
+table <- rme_table(msft2017TimeSeries, msft2019TimeSeries, 3, 3)
+require(knitr)
+kable(table, digits = 2)
+```
+
+```{r 2012 Forecast Plot, echo=FALSE, message=FALSE}
+trainingModel <- arima(msft2012TimeSeries, order = c(2,1,2))
+model2012 <- trainingModel
+predictedValues <- predict(trainingModel, n.ahead = 5)$pred
+trainingModel$x <- msft2012TimeSeries
+forecast <- forecast::forecast(trainingModel, h=5)
+
+plot(forecast, xlim = c(2.8, 3.01), ylim = c(34,40)) 
+lines(msft2014TimeSeries)
+
+plot(forecast, main = "Microsoft Stock Price in 2017 - 2018 & Forecast 2019", type="l", col = "red", lwd = 2, ylab = "Price in $", xlab = "Date", xlim = c(2.7, 3.02), xaxt="n", ylim = c(32,41)) 
+lines(msft2014TimeSeries, col = "green", lwd=2)
+legend(2.7, 41, legend=c("Stock Prices 2017-2018 (Train)", "Sotck Prices 2019 (Test)","Forecasted Price"), col=c("red", "green", "blue"), lwd=2,  cex=0.8, box.lty=0, text.font = 4)
+axis(1, at=c(2.70, 2.75, 2.8, 2.85, 2.9, 2.95, 3.0),        
+     labels=c("7/01/2013","8/01/2013","9/01/2013","10/01/2013", "11/01/2013","12/01/2013","1/01/2014"), las = 1, cex.axis = 1)
+
+plot(forecast, main = "Microsoft Stock Price in 2012 - 2013 & Forecast 2014", type="l", col = "red", lwd = 2, ylab = "Price in $", xlab = "Date", xlim = c(2.95, 3.015), xaxt="n", ylim = c(35,39)) 
+lines(msft2014TimeSeries, col = "green", lwd=2)
+legend(2.95, 39, 
+       legend=c("Stock Prices 2012-2013 (Train)", "Stock Prices 2014 (Test)","Forecasted Price" ), 
+       col=c("red", "green", "blue"), lwd=2,  cex=0.8, box.lty=0, text.font = 4)
+axis(1, at=c(2.95, 2.96, 2.97, 2.98, 2.99, 3.0, 3.01),        
+     labels=c("12/24/2013","12/26/2013","12/29/2013","12/30/2013","12/31/2013","1/1/2014","1/2/2014"), las = 1, cex.axis      = 1)
+```
+
+```{r 2017 Forecast Plot, echo=FALSE, message=FALSE}
+
+model2017 <- auto.arima(msft2017TimeSeries)
+summary(model2017)
+
+trainingModel <- arima(msft2017TimeSeries, order = c(2,1,2))
+model2017 <- trainingModel
+predictedValues <- predict(trainingModel, n.ahead = 5)$pred
+trainingModel$x <- msft2017TimeSeries
+forecast <- forecast::forecast(trainingModel, h = 5)
+
+plot(forecast, main = "Microsoft Stock Price in 2017 - 2018 & Forecast 2019", type="l", col = "red", lwd = 2, ylab =          "Price in $", xlab = "Date", xlim = c(2.6, 3.01),  cex=0.8, xaxt="n", ylim = c(95,115)) 
+lines(msft2019TimeSeries, col = "green", lwd=2)
+legend(2.6, 100, legend=c("Stock Prices 2017-2018 (Train)", "Stock Prices 2019 (Test)","Forecasted Price"), col=c("red",        "green", "blue"), lwd=2, box.lty=0, text.font = 4)
+axis(1, at=c(2.6, 2.7, 2.8, 2.9, 3.0), labels=c("09/01/2018","10/01/2018","11/01/2018","12/01/2018","01/01/2019"), las =      1, cex.axis = 1)
+
+plot(forecast, main = "Microsoft Stock Price in 2017 - 2018 & Forecast 2019", type="l", col = "red", lwd = 2, ylab =          "Price in $", xlab = "Date", xlim = c(2.95, 3.015), xaxt="n", ylim = c(95,112))
+lines(msft2019TimeSeries, col = "green", lwd=2)
+legend(2.97, 111, legend=c("Stock Prices 2017-2018 (Train)", "Stock Prices 2019 (Test)","Forecasted Price"), col=c("red",       "green", "blue"), lwd=2,  cex=0.8, box.lty=0, text.font = 4)
+axis(1, at=c(2.95, 2.96, 2.97, 2.98, 2.99, 3.0, 3.01),        
+     labels=c("12/24/2018","12/26/2018","12/27/2018","12/28/2018","12/31/2018","1/1/2019","1/2/2019"), las = 1, cex.axis      = 1)
+
+```
+
+Evaluating Residuals
+```{r EvaluatingResiduals, echo=FALSE, message=FALSE}
+Box.test(residuals(model2012),lag = 4, type = "Ljung")
+
+Box.test(residuals(model2017),lag = 4, type = "Ljung")
+```
+The above Ljung-Box test is carried out on residuals to see that after fitting the model what remains is actually the residuals. The test validates the data is independently distributed with a p-value > 0.05.
